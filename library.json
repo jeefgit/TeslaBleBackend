@@ -5,7 +5,7 @@
   "keywords": ["tesla", "ble", "esp32", "vehicle"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/jeefgit/Tesla-BLE-Simulator.git"
+    "url": "https://github.com/jeefgit/TeslaBleBackend.git"
   },
   "frameworks": ["arduino"],
   "platforms": ["espressif32"],
