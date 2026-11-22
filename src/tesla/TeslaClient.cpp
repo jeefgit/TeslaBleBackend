@@ -50,12 +50,25 @@ const char* requestName(TeslaCrypto::VehicleDataRequest r) {
   return "?";
 }
 
+// 本次加密会话是否还需要先完成一轮完整辅助查询：保证连接后温度/车门
+// 至少拿到一次数据，之后行驶中只查 Charge。
+bool g_auxWarmupPending = true;
+
+// 行驶中（车速有效且 >= 1 km/h）把辅助轮询缩到只剩 Charge（SOC/续航），
+// 避免 Charge/Climate/Closures 三条连续占链路把 Drive 阻塞 ~1.3s。
+bool drivingNow() {
+  if (g_auxWarmupPending) return false;
+  return g_vehicle.has(VF_SPEED) && g_vehicle.speedKmh >= 1.0f;
+}
+
 // 辅助状态轮询的下一类；返回 Charge 表示本轮结束。
 // 可分别用 CFG_TESLA_QUERY_CLOSURES / CFG_TESLA_QUERY_TIRE_PRESSURE 关闭。
 TeslaCrypto::VehicleDataRequest nextAuxiliaryRequest(
     TeslaCrypto::VehicleDataRequest r) {
   switch (r) {
     case TeslaCrypto::VehicleDataRequest::Charge:
+      // 行驶中本轮只查 SOC/续航；Climate/Closures 留到停车后。
+      if (drivingNow()) return TeslaCrypto::VehicleDataRequest::Charge;
       return TeslaCrypto::VehicleDataRequest::Climate;
     case TeslaCrypto::VehicleDataRequest::Climate:
 #if CFG_TESLA_QUERY_CLOSURES
@@ -618,6 +631,7 @@ void TeslaClient::sendPoll() {
       if (m_auxBurstActive) {
         if (lastAuxiliary) {
           // 本轮最后一类，从此刻开始计算下一轮的等待时间。
+          g_auxWarmupPending = false;
           m_nextAuxiliaryPollAt = now + CFG_TESLA_AUX_POLL_INTERVAL_MS;
         } else {
           m_nextAuxiliaryPollAt = now;  // 紧接着请求下一类
@@ -667,6 +681,7 @@ void TeslaClient::onCryptoSession(bool ok) {
     m_nextDrivePollAt = now;
     m_nextAuxiliaryPollAt = now;
     m_auxBurstActive = true;
+    g_auxWarmupPending = true;
     m_nextActionAt = now;
     m_diagAt = now;
     m_pollPending = false;
